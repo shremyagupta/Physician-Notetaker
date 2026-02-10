@@ -1,0 +1,21 @@
+Physician: Hello, Ms. Ahmed. How are you feeling today?
+
+Patient: Hi, doctor. I’ve been getting stomach aches on and off.
+
+Physician: When do they usually occur?
+
+Patient: Mostly in the mornings, especially on school days.
+
+Physician: Any vomiting, weight loss, or fever?
+
+Patient: No, none of that.
+
+Physician: Do you feel stressed or rushed in the mornings?
+
+Patient: Yes, a bit.
+
+Physician: That can sometimes cause stomach discomfort. Everything you’ve described sounds mild, but we’ll keep an eye on it.
+
+Patient: Okay.
+
+Physician: Try regular meals and giving yourself more time in the morning. Come back if the pain worsens or changes.

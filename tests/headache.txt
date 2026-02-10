@@ -1,0 +1,25 @@
+Physician: Hello, Ms. Green. How can I help you today?
+
+Patient: Hi, doctor. I’ve been getting headaches almost every day after school.
+
+Physician: When did they start?
+
+Patient: About two months ago.
+
+Physician: Where do you usually feel the pain?
+
+Patient: Mostly across my forehead and behind my eyes.
+
+Physician: Do you spend a lot of time on screens?
+
+Patient: Yes, I’m on my laptop most of the day for homework.
+
+Physician: That could be contributing. Any nausea, dizziness, or vision problems?
+
+Patient: No, just the headaches.
+
+Physician: Your symptoms are consistent with tension-type headaches. Improving posture, taking screen breaks, and staying hydrated should help.
+
+Patient: That sounds manageable.
+
+Physician: If they become more severe or frequent, come back and we’ll reassess.
