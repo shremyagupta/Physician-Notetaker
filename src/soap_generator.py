@@ -35,25 +35,35 @@ class SOAPGenerator:
         return self._validate_soap_result(result)
     
     def _validate_soap_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and structure SOAP note result"""
+        """Validate and normalize SOAP note result to a flat structure.
+
+        The frontend expects `SOAP_Note` to contain flat fields like
+        "Chief_Complaint", "History_of_Present_Illness", "Physical_Exam",
+        etc., so we extract from the nested JSON returned by the model.
+        """
+
+        subjective = result.get("Subjective") if isinstance(result.get("Subjective"), dict) else {}
+        objective = result.get("Objective") if isinstance(result.get("Objective"), dict) else {}
+        assessment = result.get("Assessment") if isinstance(result.get("Assessment"), dict) else {}
+        plan = result.get("Plan") if isinstance(result.get("Plan"), dict) else {}
+
+        def _clean(value: Any) -> str:
+            if not isinstance(value, str):
+                return "Not documented"
+            text = value.strip()
+            return text if text else "Not documented"
+
         validated = {
-            "Subjective": {
-                "Chief_Complaint": result.get("Subjective", {}).get("Chief_Complaint", "Not documented") if isinstance(result.get("Subjective"), dict) else "Not documented",
-                "History_of_Present_Illness": result.get("Subjective", {}).get("History_of_Present_Illness", "Not documented") if isinstance(result.get("Subjective"), dict) else "Not documented"
-            },
-            "Objective": {
-                "Physical_Exam": result.get("Objective", {}).get("Physical_Exam", "Not documented") if isinstance(result.get("Objective"), dict) else "Not documented",
-                "Observations": result.get("Objective", {}).get("Observations", "Not documented") if isinstance(result.get("Objective"), dict) else "Not documented"
-            },
-            "Assessment": {
-                "Diagnosis": result.get("Assessment", {}).get("Diagnosis", "Not documented") if isinstance(result.get("Assessment"), dict) else "Not documented",
-                "Severity": result.get("Assessment", {}).get("Severity", "Not documented") if isinstance(result.get("Assessment"), dict) else "Not documented"
-            },
-            "Plan": {
-                "Treatment": result.get("Plan", {}).get("Treatment", "Not documented") if isinstance(result.get("Plan"), dict) else "Not documented",
-                "Follow-Up": result.get("Plan", {}).get("Follow-Up", "Not documented") if isinstance(result.get("Plan"), dict) else "Not documented"
-            }
+            "Chief_Complaint": _clean(subjective.get("Chief_Complaint")),
+            "History_of_Present_Illness": _clean(subjective.get("History_of_Present_Illness")),
+            "Physical_Exam": _clean(objective.get("Physical_Exam")),
+            "Observations": _clean(objective.get("Observations")),
+            "Diagnosis": _clean(assessment.get("Diagnosis")),
+            "Severity": _clean(assessment.get("Severity")),
+            "Treatment": _clean(plan.get("Treatment")),
+            "Follow-Up": _clean(plan.get("Follow-Up")),
         }
+
         return validated
     
     def format_soap_note(self, soap_note: Dict[str, Any], format_type: str = "json") -> str:
@@ -67,46 +77,56 @@ class SOAPGenerator:
         Returns:
             Formatted SOAP note string
         """
+        # Support both flat (current normalized) and nested structures gracefully
+        is_nested = "Subjective" in soap_note and isinstance(soap_note.get("Subjective"), dict)
+
+        def _get(field_path_flat, field_path_nested):
+            if not is_nested:
+                return soap_note.get(field_path_flat, "Not documented")
+            section, key = field_path_nested
+            section_dict = soap_note.get(section, {}) or {}
+            return section_dict.get(key, "Not documented")
+
         if format_type == "json":
             import json
             return json.dumps(soap_note, indent=2)
-        
+
         elif format_type == "text":
             text = "SOAP NOTE\n"
             text += "=" * 50 + "\n\n"
-            
+
             text += "SUBJECTIVE:\n"
-            text += f"  Chief Complaint: {soap_note['Subjective']['Chief_Complaint']}\n"
-            text += f"  History of Present Illness: {soap_note['Subjective']['History_of_Present_Illness']}\n\n"
-            
+            text += f"  Chief Complaint: {_get('Chief_Complaint', ('Subjective', 'Chief_Complaint'))}\n"
+            text += f"  History of Present Illness: {_get('History_of_Present_Illness', ('Subjective', 'History_of_Present_Illness'))}\n\n"
+
             text += "OBJECTIVE:\n"
-            text += f"  Physical Exam: {soap_note['Objective']['Physical_Exam']}\n"
-            text += f"  Observations: {soap_note['Objective']['Observations']}\n\n"
-            
+            text += f"  Physical Exam: {_get('Physical_Exam', ('Objective', 'Physical_Exam'))}\n"
+            text += f"  Observations: {_get('Observations', ('Objective', 'Observations'))}\n\n"
+
             text += "ASSESSMENT:\n"
-            text += f"  Diagnosis: {soap_note['Assessment']['Diagnosis']}\n"
-            text += f"  Severity: {soap_note['Assessment']['Severity']}\n\n"
-            
+            text += f"  Diagnosis: {_get('Diagnosis', ('Assessment', 'Diagnosis'))}\n"
+            text += f"  Severity: {_get('Severity', ('Assessment', 'Severity'))}\n\n"
+
             text += "PLAN:\n"
-            text += f"  Treatment: {soap_note['Plan']['Treatment']}\n"
-            text += f"  Follow-Up: {soap_note['Plan']['Follow-Up']}\n"
+            text += f"  Treatment: {_get('Treatment', ('Plan', 'Treatment'))}\n"
+            text += f"  Follow-Up: {_get('Follow-Up', ('Plan', 'Follow-Up'))}\n"
             
             return text
         
         elif format_type == "markdown":
             md = "# SOAP Note\n\n"
             md += "## Subjective\n\n"
-            md += f"**Chief Complaint:** {soap_note['Subjective']['Chief_Complaint']}\n\n"
-            md += f"**History of Present Illness:** {soap_note['Subjective']['History_of_Present_Illness']}\n\n"
+            md += f"**Chief Complaint:** {_get('Chief_Complaint', ('Subjective', 'Chief_Complaint'))}\n\n"
+            md += f"**History of Present Illness:** {_get('History_of_Present_Illness', ('Subjective', 'History_of_Present_Illness'))}\n\n"
             md += "## Objective\n\n"
-            md += f"**Physical Exam:** {soap_note['Objective']['Physical_Exam']}\n\n"
-            md += f"**Observations:** {soap_note['Objective']['Observations']}\n\n"
+            md += f"**Physical Exam:** {_get('Physical_Exam', ('Objective', 'Physical_Exam'))}\n\n"
+            md += f"**Observations:** {_get('Observations', ('Objective', 'Observations'))}\n\n"
             md += "## Assessment\n\n"
-            md += f"**Diagnosis:** {soap_note['Assessment']['Diagnosis']}\n\n"
-            md += f"**Severity:** {soap_note['Assessment']['Severity']}\n\n"
+            md += f"**Diagnosis:** {_get('Diagnosis', ('Assessment', 'Diagnosis'))}\n\n"
+            md += f"**Severity:** {_get('Severity', ('Assessment', 'Severity'))}\n\n"
             md += "## Plan\n\n"
-            md += f"**Treatment:** {soap_note['Plan']['Treatment']}\n\n"
-            md += f"**Follow-Up:** {soap_note['Plan']['Follow-Up']}\n"
+            md += f"**Treatment:** {_get('Treatment', ('Plan', 'Treatment'))}\n\n"
+            md += f"**Follow-Up:** {_get('Follow-Up', ('Plan', 'Follow-Up'))}\n"
             
             return md
         

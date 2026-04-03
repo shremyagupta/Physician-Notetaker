@@ -54,7 +54,7 @@ class GeminiClient:
         prompt: str,
         max_retries: int = 3,
         retry_delay: float = 1.0,
-        temperature: float = 0.3
+        temperature: float = 0.3 #for acurate medical extraction, lower temperature is better to reduce hallucinations
     ) -> str:
         """
         Generate text using Gemini API with retry logic
@@ -195,36 +195,131 @@ Return a JSON object:
 
     def get_soap_prompt(self, transcript: str) -> str:
         """Generate prompt for SOAP note generation"""
-        return f"""You are a medical documentation expert. Convert the following physician-patient conversation into a structured SOAP note.
+        return f"""You are a careful medical documentation assistant.
+Convert the following physician–patient conversation into a **detailed** structured SOAP note.
 
-SOAP stands for:
-- Subjective: Patient's reported symptoms and history
-- Objective: Observable findings, physical exam results
-- Assessment: Diagnosis and clinical assessment
-- Plan: Treatment plan and follow-up
+SOAP sections:
+- Subjective: Patient's own words, complaints, symptom description, onset, duration, aggravating/relieving factors, relevant history.
+- Objective: Clinician's observations and exam findings that would reasonably accompany this presentation (vital signs, focused physical exam, notable negatives/positives).
+- Assessment: Most likely working diagnosis (or differential if appropriate) and a brief clinical reasoning summary including severity.
+- Plan: Concrete treatment plan and follow‑up instructions.
+
+VERY IMPORTANT REQUIREMENTS:
+- Use clear, complete sentences in every field (2–5 sentences each, not just short phrases).
+- In the Plan section, explicitly describe medicines and non‑drug advice the doctor might reasonably consider based on the transcript.
+- For any medicine you mention, include: name (generic if possible), typical adult dose, route, frequency, and duration in days, plus any key cautions.
+- If something is not explicitly stated in the transcript but is standard to infer (e.g., basic exam findings), you may state it as a reasonable clinical assumption.
+- If you truly cannot infer something, explain that briefly instead of just writing "Not documented".
 
 Transcript:
 {transcript}
 
-Return a JSON object with this exact structure:
+Return ONLY a JSON object with this exact structure (no extra keys):
 {{
-  "Subjective": {{
-    "Chief_Complaint": "string",
-    "History_of_Present_Illness": "string"
-  }},
-  "Objective": {{
-    "Physical_Exam": "string",
-    "Observations": "string"
-  }},
-  "Assessment": {{
-    "Diagnosis": "string",
-    "Severity": "string"
-  }},
-  "Plan": {{
-    "Treatment": "string",
-    "Follow-Up": "string"
-  }}
+    "Subjective": {{
+        "Chief_Complaint": "string",
+        "History_of_Present_Illness": "string"
+    }},
+    "Objective": {{
+        "Physical_Exam": "string",
+        "Observations": "string"
+    }},
+    "Assessment": {{
+        "Diagnosis": "string",
+        "Severity": "string"
+    }},
+    "Plan": {{
+        "Treatment": "string",
+        "Follow-Up": "string"
+    }}
+}}"""
+
+    def get_medicine_suggestion_prompt(self, transcript: str) -> str:
+        """Generate prompt for AI medicine suggestion"""
+        return f"""You are an advanced AI medical assistant analyzing a doctor–patient conversation.
+    Based on the patient's reported symptoms and the context of the conversation so far, suggest a **clear, concrete treatment plan** that a licensed clinician could consider.
+
+    Transcript:
+    {transcript}
+
+    Your response MUST be plain text (no bullets or markdown) and should include:
+    - 2–3 possible diagnoses or explanations, in plain language.
+    - A proposed medicine plan (if appropriate) with for each medicine: name, typical adult dose, route, frequency, and duration in days (for example: "paracetamol 500 mg orally every 6 hours as needed for pain, for up to 5 days").
+    - Any important cautions, red‑flag symptoms, or when the patient should seek urgent in‑person care.
+    - A brief summary of non‑medication advice (rest, hydration, lifestyle measures).
+
+    This is educational content only and does not replace real medical care."""
+
+        def get_diet_exercise_plan_prompt(self, transcript: str) -> str:
+                """Generate JSON prompt for AI diet and exercise plan suggestion.
+
+                The model must decide whether the case appears critical/emergent
+                based on symptoms (e.g. chest pain, severe shortness of breath,
+                stroke signs, uncontrolled bleeding, severe abdominal pain, etc.).
+                """
+                return f"""You are an experienced clinical nutrition and lifestyle medicine assistant.
+Analyze the following doctor–patient conversation and design a safe, practical
+diet and exercise plan that could support the patient's recovery and overall
+health, based primarily on the reported symptoms.
+
+Transcript:
+{transcript}
+
+VERY IMPORTANT:
+- First, judge whether this case appears to require urgent in‑person
+    medical assessment or emergency care based on red‑flag symptoms
+    (for example: chest pain, trouble breathing, signs of stroke,
+    severe trauma, uncontrolled bleeding, very high fever with confusion,
+    severe abdominal pain, pregnancy emergencies, etc.).
+- If such red‑flag patterns are present, mark the case as emergency.
+
+Return ONLY a single JSON object with exactly these fields:
+{{
+    "plan_text": "Full diet and exercise plan as one plain‑text string with no markdown.",
+    "risk_level": "Low" | "Medium" | "High" | "Emergency",
+    "is_emergency": true or false
 }}
 
-If information is not available in the transcript, use "Not documented" for that field."""
+Guidance for the plan_text field:
+- Briefly summarise the main health concerns and symptoms in simple language.
+- Give specific diet recommendations (what to increase, what to reduce or
+    avoid) with clear examples of meals or foods for breakfast, lunch, dinner,
+    and snacks.
+- Include hydration advice (how much and what kind of fluids).
+- Provide a step‑by‑step exercise or physical‑activity plan that is realistic
+    for a general adult (frequency per week, duration per session, and
+    approximate intensity), including clear cautions for people with pain,
+    dizziness, breathlessness, heart disease, or other limitations.
+- Add lifestyle tips such as sleep, stress management, posture, and daily
+    habits that are relevant to the symptoms.
+- Clearly describe any red‑flag warning signs when the patient should stop
+    exercise immediately and seek urgent in‑person care.
+
+Do NOT prescribe or adjust medicines. Emphasize near the end that this plan is
+educational only and does not replace personalised advice from a licensed
+clinician or dietitian."""
+
+    def get_icd10_prompt(self, transcript: str, diagnosis: Optional[str] = None) -> str:
+        """Generate prompt for ICD-10 clinical coding"""
+        context = f"Diagnosis: {diagnosis}" if diagnosis else "Extract possible diagnoses from the transcript."
+        return f"""You are a medical coding expert. Based on the following physician-patient transcript and the identified diagnosis, suggest appropriate ICD-10-CM codes.
+
+Transcript:
+{transcript}
+
+{context}
+
+Return a JSON object with this structure:
+{{
+  "ICD10_Codes": [
+    {{
+      "code": "CODE123",
+      "description": "Description of the code",
+      "confidence": "High|Medium|Low"
+    }}
+  ]
+}}
+
+If no specific codes can be identified, return an empty array for ICD10_Codes."""
+
 

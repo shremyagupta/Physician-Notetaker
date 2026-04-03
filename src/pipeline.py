@@ -9,6 +9,7 @@ from .medical_ner import MedicalNER
 from .summarization import MedicalSummarizer
 from .sentiment_analysis import SentimentAnalyzer
 from .soap_generator import SOAPGenerator
+from .clinical_coding import ICD10Coder
 
 
 class PhysicianNotetakerPipeline:
@@ -29,6 +30,7 @@ class PhysicianNotetakerPipeline:
         self.summarizer = MedicalSummarizer(gemini_client=self.client)
         self.sentiment_analyzer = SentimentAnalyzer(gemini_client=self.client)
         self.soap_generator = SOAPGenerator(gemini_client=self.client)
+        self.icd10_coder = ICD10Coder(gemini_client=self.client)
     
     def process_transcript(self, transcript: str, include_soap: bool = True) -> Dict[str, Any]:
         """
@@ -45,7 +47,8 @@ class PhysicianNotetakerPipeline:
             "Medical_NER": {},
             "Summarization": {},
             "Sentiment_Analysis": {},
-            "SOAP_Note": {}
+            "SOAP_Note": {},
+            "Clinical_Coding": []
         }
         
         # 1. Medical NER Extraction
@@ -72,6 +75,13 @@ class PhysicianNotetakerPipeline:
                 results["SOAP_Note"] = self.soap_generator.generate_soap_note(transcript)
             except Exception as e:
                 results["SOAP_Note"] = {"error": str(e)}
+        
+        # 5. Clinical Coding (ICD-10)
+        try:
+            diagnosis = results.get("Medical_NER", {}).get("Diagnosis")
+            results["Clinical_Coding"] = self.icd10_coder.suggest_codes(transcript, diagnosis)
+        except Exception as e:
+            results["Clinical_Coding"] = [{"error": str(e)}]
         
         return results
     
@@ -101,6 +111,45 @@ class PhysicianNotetakerPipeline:
             results["Sentiment"] = {"error": str(e)}
         
         return results
+
+    def suggest_medicine(self, transcript: str) -> str:
+        """
+        Suggest medicine based on the current transcript
+        """
+        prompt = self.client.get_medicine_suggestion_prompt(transcript)
+        try:
+            suggestion = self.client.generate_text(prompt, temperature=0.3)
+            return suggestion.strip()
+        except Exception as e:
+            return f"Error generating suggestion: {str(e)}"
+    
+    def suggest_diet_exercise_plan(self, transcript: str) -> str:
+        """Suggest diet and exercise plan based on the current transcript.
+
+        Returns a dictionary with:
+          - plan_text: str
+          - risk_level: str (Low|Medium|High|Emergency|Unknown)
+          - is_emergency: bool
+        """
+        prompt = self.client.get_diet_exercise_plan_prompt(transcript)
+        try:
+            result = self.client.generate_json(prompt, temperature=0.35)
+            plan_text = str(result.get("plan_text", "")).strip()
+            if not plan_text:
+                plan_text = "No diet and exercise plan could be generated from the current information."
+            risk_level = str(result.get("risk_level", "Unknown")) or "Unknown"
+            is_emergency = bool(result.get("is_emergency", False))
+            return {
+                "plan_text": plan_text,
+                "risk_level": risk_level,
+                "is_emergency": is_emergency,
+            }
+        except Exception as e:
+            return {
+                "plan_text": f"Error generating diet and exercise plan: {str(e)}",
+                "risk_level": "Unknown",
+                "is_emergency": False,
+            }
     
     def export_results(self, results: Dict[str, Any], format_type: str = "json") -> str:
         """
@@ -152,7 +201,7 @@ class PhysicianNotetakerPipeline:
                 text += "\n"
             
             # SOAP Note
-            if "SOAP_Note" in results:
+            if "SOAP_Note" in results and results["SOAP_Note"]:
                 text += "SOAP NOTE:\n"
                 text += "-" * 60 + "\n"
                 soap = results["SOAP_Note"]
@@ -160,6 +209,21 @@ class PhysicianNotetakerPipeline:
                     text += self.soap_generator.format_soap_note(soap, format_type="text")
                 else:
                     text += f"Error: {soap['error']}\n"
+                text += "\n"
+                text += "\n"
+            
+            # Clinical Coding
+            if "Clinical_Coding" in results:
+                text += "CLINICAL CODING (ICD-10-CM):\n"
+                text += "-" * 60 + "\n"
+                coding = results["Clinical_Coding"]
+                if coding and isinstance(coding, list) and "error" not in coding[0]:
+                    for code_data in coding:
+                        text += f"[{code_data.get('code', 'N/A')}] {code_data.get('description', 'N/A')} (Confidence: {code_data.get('confidence', 'N/A')})\n"
+                elif coding and "error" in coding[0]:
+                    text += f"Error: {coding[0]['error']}\n"
+                else:
+                    text += "No codes identified.\n"
             
             return text
         
